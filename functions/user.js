@@ -1,13 +1,13 @@
 require('dotenv').config()
 const jwt = require('jsonwebtoken')
 const bcrypt = require('bcrypt')
-const secret = process.env.secret
+const secret = process.env.SECRET
 const connection = require("../db-config")
-const connect = require('../db-config')
+const middle = require("../middleware.js")
 
 function register(username, email, password, type, callback) {
-    const sql = `INSERT INTO user (username, email, password, type) VALUES (?, ?, ?, ?)`;
-    connection.query(sql, [username, email, password, type], function (error, results, fields) {
+    const sql = `INSERT INTO user (username, email, password, type, state, first_login) VALUES (?, ?, ?, ?, ?, ?)`;
+    connection.query(sql, [username, email, password, type, 0, 0], function (error, results, fields) {
         if (error) callback(error);
         callback(null, {
             success: true,
@@ -18,10 +18,8 @@ function register(username, email, password, type, callback) {
 
 function login(email, password, callback) {
     let samePassword = false;
-
     const sql = `SELECT * FROM user WHERE email = ?`;
     connection.query(sql, [email], function (error, result) {
-        console.log(error)
         if (!error) {
             let message = "SUCESSO"
             if (result.length == 0) {
@@ -31,38 +29,42 @@ function login(email, password, callback) {
                 if (samePassword == false) {
                     result = []
                     message = "Dados Inválidos"
-                } else if (samePassword && result[0].type == 1) {
+                } else if (samePassword && result[0].state === 1) {
                     result = []
                     message = "Não tem autorização"
                 }
             }
             if (result.length > 0) {
-                if (result[0].type === 0) {
-                    const token = jwt.sign({
+                if (result[0].state === 0) {
+                    jwt.sign({
+                        id_user: result[0].id,
                         username: result[0].username,
                         email: result[0].email,
-                        type: result[0].type
-                    }, secret)
-                    callback(null, {
-                        token: token,
-                        response: result
+                        type: result[0].type,
+                        state: result[0].state,
+                        first_login: result[0].first_login
+
+                    }, secret, {
+                        expiresIn: '24h'
+                    }, (err, token) => {
+                        callback(null, {
+                            token: token
+                        })
                     })
                 } else {
                     message = "Não autorizado"
-                    callback({
+                    callback(null, {
                         message: message
                     })
                 }
             } else {
-                callback({
+                callback(null, {
                     message: message
                 })
             }
         } else {
             let message = "Erro de Ligação"
-            callback({
-                message: message
-            })
+            callback(error)
         }
     })
 
@@ -84,8 +86,8 @@ function editPassword(id, oldPassword, newPassword, callback) {
                     }
                 }
                 if (correctOldPassword == true) {
-                    const sql2 = `UPDATE user SET password = ? WHERE id = ?`
-                    connection.query(sql2, [newPassword, id], function (error, results) {
+                    const sql2 = `UPDATE user SET password = ?, first_login = ? WHERE id = ?`
+                    connection.query(sql2, [newPassword, 1, id], function (error, results) {
                         if (error) callback(error);
                         callback(null, {
                             success: true,
@@ -106,13 +108,12 @@ function editPassword(id, oldPassword, newPassword, callback) {
     }
 }
 
-/* function editType(id, callback) {
+function editType(id, callback) {
     const sql = `SELECT type FROM user WHERE id = ?`
     connection.query(sql, [id], function (error, rows, results) {
-        console.log(rows.typ)
         if (rows[0].type === 1) {
-            const sql2 = `UPDATE user SET type = ?`
-            connection.query(sql2, 0, function (err, results) {
+            const sql2 = `UPDATE user SET type = ? WHERE id = ?`
+            connection.query(sql2, [0, id], function (err, results) {
                 if (error) callback(err);
                 callback(null, {
                     success: true,
@@ -120,8 +121,8 @@ function editPassword(id, oldPassword, newPassword, callback) {
                 })
             })
         } else if (rows[0].type === 0) {
-            const sql2 = `UPDATE user SET type = ?`
-            connection.query(sql2, 1, function (err, rows, results) {
+            const sql2 = `UPDATE user SET type = ? WHERE id = ?`
+            connection.query(sql2, [1, id], function (err, rows, results) {
                 if (err) callback(err);
                 callback(null, {
                     success: true,
@@ -131,26 +132,52 @@ function editPassword(id, oldPassword, newPassword, callback) {
         }
 
     })
-} */
+}
 
-function editType(id, userType, callback) {
-    const sql = `UPDATE user SET type = ? WHERE id = ?`
-    connection.query(sql, [userType, id], function (err, results) {
+function editState(id, callback) {
+    const sql = `SELECT state FROM user WHERE id = ?`
+    connection.query(sql, [id], function (error, rows, results) {
+        if (rows[0].state === 1) {
+            const sql2 = `UPDATE user SET state = ? WHERE id = ?`
+            connection.query(sql2, [0, id], function (err, results) {
+                if (error) callback(err);
+                callback(null, {
+                    success: true,
+                    message: "Utilizador Autorizado"
+                })
+            })
+        } else if (rows[0].state === 0) {
+            const sql2 = `UPDATE user SET state = ? WHERE id = ?`
+            connection.query(sql2, [1, id], function (err, rows, results) {
+                if (err) callback(err);
+                callback(null, {
+                    success: true,
+                    message: "Utilizador não autorizado"
+                })
+            })
+        }
+
+    })
+}
+
+function deleteUser(id, callback) {
+    const sql = `DELETE FROM user WHERE id = ?`
+    connection.query(sql, [id], function (err, results) {
         if (err) callback(err);
         callback(null, {
             success: true,
-            message: "Utilizador atualizado"
+            message: "Utilizador removido"
         })
     })
 }
 
-function logout(token, callback) {
-    let sql = `INSERT INTO blacklist (token) VALUES (?)`
-    connection.query(sql, [token], function (err, results) {
+function getUsers(callback) {
+    const sql = `SELECT * FROM user`
+    connection.query(sql, function (err, rows, results) {
         if (err) callback(err);
         callback(null, {
             success: true,
-            message: "Sessão terminada"
+            data: rows
         })
     })
 }
@@ -160,6 +187,8 @@ module.exports = {
     login: login,
     editPassword: editPassword,
     editType: editType,
-    logout: logout
+    deleteUser: deleteUser,
+    editState: editState,
+    getUsers: getUsers
+    /* logout: logout */
 }
-

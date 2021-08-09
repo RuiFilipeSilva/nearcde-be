@@ -1,4 +1,8 @@
 const applications = require("../functions/applications")
+const fs = require('fs')
+const secret = process.env.SECRET
+const jwt = require('jsonwebtoken');
+const emails = require('../emails')
 
 const nodemailer = require('nodemailer');
 const sendgridTransporter = require('nodemailer-sendgrid-transport');
@@ -11,14 +15,18 @@ const transporter = nodemailer.createTransport(
 )
 
 
-
-
 function getApplications(req, result) {
-    applications.getApplications((error, success) => {
-        if (error) {
-            res.status(400).send(error)
+    jwt.verify(req.token, secret, (err, authData) => {
+        if (err) {
+            result.status(403).send(err);
         } else {
-            result.json(success)
+            applications.getApplications((error, success) => {
+                if (error) {
+                    result.status(400).send(error)
+                } else {
+                    result.json(success)
+                }
+            })
         }
     })
 }
@@ -28,16 +36,24 @@ function addApplications(req, result) {
     let candidateName = req.body.candidateName
     let candidateEmail = req.body.candidateEmail
     let curriculum = req.files.curriculum
-    let nif = req.body.nif
-    let date = req.body.date
+    let date = new Date()
     let linkedin = req.body.linkedin
+    let about = req.body.about
+    let otherSkills = req.body.otherSkills
+    let comments = req.body.comments
+    let skills = req.body.skills
+    let cellphone = req.body.cellphone
     let curriculunName = curriculum.name;
     let jobsName
+    let dateNow = new Date()
+    let dateNowD = dateNow.getDate()
+    let dateNowM = dateNow.getMonth() + 1
+    let dateNowY = dateNow.getFullYear()
 
-    if (curriculum.mimetype == "image/jpeg" || curriculum.mimetype == "image/png" || curriculum.mimetype == "application/pdf") {
-        curriculum.mv('./public/docs/' + curriculunName, function (err) {
+    if (curriculum.mimetype == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || curriculum.mimetype == "application/pdf") {
+        curriculum.mv('./public/docs/' + candidateName + dateNowD + dateNowM + dateNowY + idJobs + curriculunName, function (err) {
             if (err) result.status(500).send(err)
-            applications.addApplications(idJobs, candidateName, candidateEmail, curriculunName, nif, date, linkedin, (error, success) => {
+            applications.addApplications(idJobs, candidateName, candidateEmail, candidateName + dateNowD + dateNowM + dateNowY + idJobs + curriculunName, date, linkedin, about, otherSkills, comments, skills, cellphone, (error, success) => {
                 if (error) {
                     result.status(400).send(error)
                 } else {
@@ -45,71 +61,28 @@ function addApplications(req, result) {
                     // send mail with defined transport object
                     applications.getJobsName(idJobs, (error, success) => {
                         if (error) {
-                            res.status(400).send(error)
+                            result.status(400).send(error)
                         } else {
                             jobsName = success.data
+                            let email = emails.emailApplicationSend(candidateName, jobsName)
                             transporter.sendMail({
-                                from: "9150564@esmad.ipp.pt", // sender address
+                                from: process.env.EMAIL, // sender address
                                 to: candidateEmail, // list of receivers
                                 subject: "Candidatura NEARCODE Consulting", // Subject line
-                                html: `  <table style="width: 50%;border: 5px solid #f7941e; margin-left: auto; margin-right: auto;">
-                        <tr>
-                            <th style="background-color: #888888;"><img src="https://raw.githubusercontent.com/RuiFilipeSilva/table/master/assets/nearcode_3.png"
-                                    alt="">
-                            </th>
-                        </tr>
-                        <tr>
-                            <td id="title"
-                                style="padding-top: 50px;font-family: Verdana, Geneva, Tahoma, sans-serif;text-align: center;  color: #000000"">
-                                <h1>Obrigado pela tua candidatura!</h1>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td id="text" style="text-align: center; padding-left: 20px; padding-right: 20px; color: #000000">
-                                <h3>Olá ${candidateName}. Agradecemos o teu interesse na oportunidade ${jobsName} e a confiança na NEARCODE.
-                                    <br> Iremos analisar a informação que partilhaste e em breve entraremos em contacto contigo caso
-                                    tenhas o perfil que procuramos.
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><img id="img"
-                                    src="https://raw.githubusercontent.com/RuiFilipeSilva/table/master/assets/unnamed.png"
-                                    alt=""
-                                    style="padding-top: 50px;padding-bottom: 50px;">
-                            </th>
-                        </tr>
-                        <tr>
-                            <th style="background-color: #f7941e;">
-                                <a href="https://www.facebook.com/nearcode"><img
-                                        src="https://raw.githubusercontent.com/RuiFilipeSilva/table/master/assets/facebook.png" alt=""
-                                        style="height: 30px; padding-top: 5px; padding-right: 5px;"></a>
-                                <a href="https://www.linkedin.com/company/nearcode-consulting/about/"><img
-                                        src="https://raw.githubusercontent.com/RuiFilipeSilva/table/master/assets/linkedin.png" alt=""
-                                        style="height: 30px; padding-top: 5px; padding-left: 5px"></a>
-                            </th>
-                        </tr>
-                        <tr>
-                            <th style="background-color: #888888;">
-                                <img id="img" src="https://raw.githubusercontent.com/RuiFilipeSilva/table/master/assets/nearcode_3.png" alt=""
-                                    style="height: 100px;display: block;margin-left: auto;margin-right: auto;"> <br>
-                                <h5 style="margin-top: -30px; color: white;">Rua da Alegria, nº 1988, 1º andar,
-                                    4200-024 Porto
-                                    <br>
-                                    Tlf: +351 22 017 8817
-                                    <br>
-                                    email: geral@nearcode.com
-                                </h5>
-                            </th>
-                        </tr>
-                    </table>`, // html body
+                                html: `${email}`, // html body
                             });
+
+                            /* transporter.sendMail({
+                                from: process.env.EMAIL, // sender address
+                                to: "rh@nearcodeconsulting.com", // list of receivers
+                                subject: "Candidatura NEARCODE Consulting", // Subject line´
+                                html: `<h1>Candidatura recebida</h1>
+                                 <p>Recebeu a candidatura de ${candidateName} para a vaga de ${jobsName}</p>`
+                            }) */
                         }
                     })
-
-
                 }
             })
-
         })
     }
 }
@@ -118,80 +91,42 @@ function addSpontaneousApplications(req, result) {
     let candidateName = req.body.candidateName
     let candidateEmail = req.body.candidateEmail
     let curriculum = req.files.curriculum
-    let nif = req.body.nif
-    let date = req.body.date
+    let date = new Date()
     let linkedin = req.body.linkedin
     let curriculunName = curriculum.name;
+    let about = req.body.about
+    let otherSkills = req.body.otherSkills
+    let comments = req.body.comments
+    let skills = req.body.skills
+    let cellphone = req.body.cellphone
+    if (curriculum.mimetype == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || curriculum.mimetype == "application/pdf") {
+        let dateNow = new Date()
+        let dateNowD = dateNow.getDate()
+        let dateNowM = dateNow.getMonth() + 1
+        let dateNowY = dateNow.getFullYear()
+        curriculum.mv('./public/docs/' + candidateName + dateNowD + dateNowM + dateNowY + '0' + curriculunName, function (err) {
 
-    console.log(curriculum.mimetype)
-
-    if (curriculum.mimetype == "image/jpeg" || curriculum.mimetype == "image/png" || curriculum.mimetype == "application/pdf") {
-        console.log(curriculum.mimetype)
-        console.log(curriculum.name)
-        curriculum.mv('./public/docs/' + curriculunName, function (err) {
-
-            if (err) result.status(500).send(err)
-            applications.addSpontaneousApplications(candidateName, candidateEmail, curriculunName, nif, date, linkedin, (error, success) => {
+            if (err) result.status(400).send(err)
+            applications.addSpontaneousApplications(candidateName, candidateEmail, candidateName + dateNowD + dateNowM + dateNowY + '0' + curriculunName, date, linkedin, about, otherSkills, comments, skills, cellphone, (error, success) => {
                 if (error) {
-                    console.log(error)
                     result.status(400).send(error)
                 } else {
                     result.json(success)
+                    let email = emails.emailSpontaneousSend(candidateName)
                     transporter.sendMail({
-                        from: "9150564@esmad.ipp.pt", // sender address
+                        from: process.env.EMAIL, // sender address
                         to: candidateEmail, // list of receivers
                         subject: "Candidatura NEARCODE Consulting", // Subject line
-                        html: `  <table style="width: 50%;border: 5px solid #f7941e; margin-left: auto; margin-right: auto;">
-                        <tr>
-                            <th style="background-color: #888888;"><img src="https://raw.githubusercontent.com/RuiFilipeSilva/table/master/assets/nearcode_3.png"
-                                    alt="">
-                            </th>
-                        </tr>
-                        <tr>
-                            <td id="title"
-                                style="padding-top: 50px;font-family: Verdana, Geneva, Tahoma, sans-serif;text-align: center;  color: #000000"">
-                                <h1>Obrigado pela tua candidatura!</h1>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td id="text" style="text-align: center; padding-left: 20px; padding-right: 20px; color: #000000">
-                                <h3>Olá ${candidateName}. Agradecemos o teu interesse na Candidatura Espontanêa e a confiança na NEARCODE.
-                                    <br> Iremos analisar a informação que partilhaste e em breve entraremos em contacto contigo caso
-                                    tenhas o perfil que procuramos.
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><img id="img"
-                                    src="https://raw.githubusercontent.com/RuiFilipeSilva/table/master/assets/unnamed.png"
-                                    alt=""
-                                    style="padding-top: 50px;padding-bottom: 50px;">
-                            </th>
-                        </tr>
-                        <tr>
-                            <th style="background-color: #f7941e;">
-                                <a href="https://www.facebook.com/nearcode"><img
-                                        src="https://raw.githubusercontent.com/RuiFilipeSilva/table/master/assets/facebook.png" alt=""
-                                        style="height: 30px; padding-top: 5px; padding-right: 5px;"></a>
-                                <a href="https://www.linkedin.com/company/nearcode-consulting/about/"><img
-                                        src="https://raw.githubusercontent.com/RuiFilipeSilva/table/master/assets/linkedin.png" alt=""
-                                        style="height: 30px; padding-top: 5px; padding-left: 5px"></a>
-                            </th>
-                        </tr>
-                        <tr>
-                            <th style="background-color: #888888;">
-                                <img id="img" src="https://raw.githubusercontent.com/RuiFilipeSilva/table/master/assets/nearcode_3.png" alt=""
-                                    style="height: 100px;display: block;margin-left: auto;margin-right: auto;"> <br>
-                                <h5 style="margin-top: -30px; color: white;">Rua da Alegria, nº 1988, 1º andar,
-                                    4200-024 Porto
-                                    <br>
-                                    Tlf: +351 22 017 8817
-                                    <br>
-                                    email: geral@nearcode.com
-                                </h5>
-                            </th>
-                        </tr>
-                    </table>`, // html body
+                        html: `${email}`, // html body
                     });
+
+                    transporter.sendMail({
+                        from: process.env.EMAIL, // sender address
+                        to: "rh@nearcodeconsulting.com", // list of receivers
+                        subject: "Candidatura NEARCODE Consulting", // Subject line´
+                        html: `<h1>Candidatura recebida</h1>
+                        <p>Recebeu a candidatura espontânea de ${candidateName}</p>`
+                    })
                 }
 
             })
@@ -200,215 +135,81 @@ function addSpontaneousApplications(req, result) {
 
 }
 
+function contactsEmail(req, res) {
+    let name = req.body.name;
+    let email = req.body.email
+    let message = req.body.message
+    transporter.sendMail({
+        from: process.env.EMAIL,
+        to: "geral@nearcodeconsulting.com",
+        subject: `Contacto por parte de ${name}`,
+        html: `<p>${message}</p> <br> <p>Enviado por ${name} - ${email} </p>`
+    })
+    res.status(200).send("sucess")
+}
+
 function getApplicationsByIdJobs(req, result) {
     let idJobs = req.params.idJobs
 
-    applications.getApplicationsByIdJobs(idJobs, (error, success) => {
-        if (error) {
-            result.status(400).send(error)
+    jwt.verify(req.token, secret, (err, authData) => {
+        if (err) {
+            result.status(403).send(err);
         } else {
-            result.json(success)
+            applications.getApplicationsByIdJobs(idJobs, (error, success) => {
+                if (error) {
+                    result.status(400).send(error)
+                } else {
+                    result.json(success)
+                }
+            })
         }
     })
+
 }
 
 function getApplicationsById(req, result) {
     let idApplication = req.params.idApplication
-
-    applications.getApplicationsById(idApplication, (error, success) => {
-        if (error) {
-            result.status(400).send(error)
+    jwt.verify(req.token, secret, (err, authData) => {
+        if (err) {
+            result.status(403).send(err);
         } else {
-            result.json(success)
+            applications.getApplicationsById(idApplication, (error, success) => {
+                if (error) {
+                    result.status(400).send(error)
+                } else {
+                    result.json(success)
+                }
+            })
         }
     })
 }
 
 function removeApplication(req, result) {
     let idApplication = req.params.idApplication
-
-    applications.removeApplication(idApplication, (error, success) => {
-        if (error) {
-            result.status(400).send(error)
+    jwt.verify(req.token, secret, (err, authData) => {
+        if (err) {
+            result.status(403).send(err);
         } else {
-            result.json(success)
-        }
-    })
-}
+            const directory = __basedir + "/public/docs/"
+            applications.deleteFile(idApplication, (error, success) => {
+                if (error) {
+                    result.status(400).send(error)
+                } else {
+                    let directory2 = directory + success.data[0].curriculum
+                    applications.removeApplication(idApplication, (erro, succe) => {
+                        if (erro) {
+                            result.status(400).send(erro)
+                        } else {
+                            result.json(succe)
+                        }
+                    })
+                    fs.stat(directory2, function (err, status) {
+                        if (err) {} else {
+                            fs.unlink(directory2, function (err, stats) {
+                                if (err) return err;
+                            })
 
-function editInterest(req, result) {
-    let idApplication = req.params.idApplication
-
-    applications.editInterest(idApplication, (error, success) => {
-        if (error) {
-            result.status(400).send(error)
-        } else {
-            result.json(success)
-        }
-    })
-}
-
-function getInterest(req, result) {
-    applications.getInterest((error, success) => {
-        if (error) {
-            result.status(400).send(error)
-        } else {
-            result.json(success)
-        }
-    })
-}
-
-function getNotInterest(req, result) {
-    let jobsId = req.params.jobsId
-    applications.getNotInterest(jobsId, (error, success) => {
-        if (error) {
-            res.status(400).send(error)
-        } else {
-            result.json(success)
-            console.log(success.data.length)
-            for (let i = 0; i < success.data.length; i++) {
-                console.log(success.data[i].candidate_email)
-                transporter.sendMail({
-                    from: "9150564@esmad.ipp.pt", // sender address
-                    to: success.data[i].candidate_email, // list of receivers
-                    subject: "Candidatura NEARCODE Consulting", // Subject line
-                    html: `  <table style="width: 50%;border: 5px solid #f7941e; margin-left: auto; margin-right: auto;">
-            <tr>
-                <th style="background-color: #888888;"><img src="https://raw.githubusercontent.com/RuiFilipeSilva/table/master/assets/nearcode_3.png"
-                        alt="" style="height: 130px;">
-                </th>
-            </tr>
-            <tr>
-                <td id="title"
-                    style="padding-top: 50px;font-family: Verdana, Geneva, Tahoma, sans-serif;text-align: center;  color: #000000"">
-                    <h1>Obrigado pela tua candidatura!</h1>
-                </td>
-            </tr>
-            <tr>
-                <th id="text" style="padding-left: 20px; padding-right: 20px; color: #000000">
-                    <h3>Olá ${success.data[i].candidate_name}. Uma vez mais obrigada pelo teu interesse na NEARCODE. Consideramos o teu perfil particularmente interessante, no entanto decidimos avançar com outras candidaturas.
-                        <br> Iremos reter os teus dados para futuros processos de recrutamento, e de acordo com a nossa política de privacidade e de proteção de dados, que poderás consultar no nosso site a qualquer momento.<br>
-                        Boa sorte na tua procura de emprego!<br>A EQUIPA NEARCODE
-                </th>
-            </tr>
-            <tr>
-                <td><img id="img"
-                        src="https://raw.githubusercontent.com/RuiFilipeSilva/table/master/assets/unnamed.png"
-                        alt=""
-                        style="height: 300px;padding-top: 50px;padding-bottom: 50px;display: block;margin-left: auto;margin-right: auto;">
-                </td>
-            </tr>
-            <tr>
-                <th style="background-color: #f7941e;">
-                    <a href="https://www.facebook.com/nearcode"><img
-                            src="https://raw.githubusercontent.com/RuiFilipeSilva/table/master/assets/facebook.png" alt=""
-                            style="height: 30px; padding-top: 5px; padding-right: 5px;"></a>
-                    <a href="https://www.linkedin.com/company/nearcode-consulting/about/"><img
-                            src="https://raw.githubusercontent.com/RuiFilipeSilva/table/master/assets/linkedin.png" alt=""
-                            style="height: 30px; padding-top: 5px; padding-left: 5px"></a>
-                </th>
-            </tr>
-            <tr>
-                <th style="background-color: #888888;">
-                    <img id="img" src="https://raw.githubusercontent.com/RuiFilipeSilva/table/master/assets/nearcode_3.png" alt=""
-                        style="height: 100px;display: block;margin-left: auto;margin-right: auto;"> <br>
-                    <h5 style="margin-top: -30px; color: white;">Rua da Alegria, nº 1988, 1º andar,
-                        4200-024 Porto
-                        <br>
-                        Tlf: +351 22 017 8817
-                        <br>
-                        email: geral@nearcode.com
-                    </h5>
-                </th>
-            </tr>
-        </table>`, // html body
-                });
-
-            }
-        }
-    })
-}
-
-function sendEmailForCandidates(req, result) {
-    let idApplication = req.params.idApplication
-    applications.sendEmailForCandidates(idApplication, (error, success) => {
-        if (error) {
-            result.status(400).send(error)
-        } else {
-            result.json(success)
-            transporter.sendMail({
-                from: "9150564@esmad.ipp.pt", // sender address
-                to: success.data[0].candidate_email, // list of receivers
-                subject: "Candidatura NEARCODE Consulting", // Subject line
-                html: `  <table style="width: 50%;border: 5px solid #f7941e; margin-left: auto; margin-right: auto;">
-        <tr>
-            <th style="background-color: #888888;"><img src="https://raw.githubusercontent.com/RuiFilipeSilva/table/master/assets/nearcode_3.png"
-                    alt="" style="height: 130px;">
-            </th>
-        </tr>
-        <tr>
-            <td id="title"
-                style="padding-top: 50px;font-family: Verdana, Geneva, Tahoma, sans-serif;text-align: center;  color: #000000"">
-                <h1>Obrigado pela tua candidatura!</h1>
-            </td>
-        </tr>
-        <tr>
-            <th id="text" style="padding-left: 20px; padding-right: 20px; color: #000000">
-                <h3>Olá ${success.data[0].candidate_name}. Uma vez mais obrigada pelo teu interesse na NEARCODE. Consideramos o teu perfil particularmente interessante, no entanto decidimos avançar com outras candidaturas.
-                    <br> Iremos reter os teus dados para futuros processos de recrutamento, e de acordo com a nossa política de privacidade e de proteção de dados, que poderás consultar no nosso site a qualquer momento.<br>
-                    Boa sorte na tua procura de emprego!<br>A EQUIPA NEARCODE
-            </th>
-        </tr>
-        <tr>
-            <td><img id="img"
-                    src="https://raw.githubusercontent.com/RuiFilipeSilva/table/master/assets/unnamed.png"
-                    alt=""
-                    style="height: 300px;padding-top: 50px;padding-bottom: 50px;display: block;margin-left: auto;margin-right: auto;">
-            </td>
-        </tr>
-        <tr>
-            <th style="background-color: #f7941e;">
-                <a href="https://www.facebook.com/nearcode"><img
-                        src="https://raw.githubusercontent.com/RuiFilipeSilva/table/master/assets/facebook.png" alt=""
-                        style="height: 30px; padding-top: 5px; padding-right: 5px;"></a>
-                <a href="https://www.linkedin.com/company/nearcode-consulting/about/"><img
-                        src="https://raw.githubusercontent.com/RuiFilipeSilva/table/master/assets/linkedin.png" alt=""
-                        style="height: 30px; padding-top: 5px; padding-left: 5px"></a>
-            </th>
-        </tr>
-        <tr>
-            <th style="background-color: #888888;">
-                <img id="img" src="https://raw.githubusercontent.com/RuiFilipeSilva/table/master/assets/nearcode_3.png" alt=""
-                    style="height: 100px;display: block;margin-left: auto;margin-right: auto;"> <br>
-                <h5 style="margin-top: -30px; color: white;">Rua da Alegria, nº 1988, 1º andar,
-                    4200-024 Porto
-                    <br>
-                    Tlf: +351 22 017 8817
-                    <br>
-                    email: geral@nearcode.com
-                </h5>
-            </th>
-        </tr>
-    </table>`, // html body
-            });
-        }
-    })
-}
-
-function download(req, res) {
-    const idApplication = req.params.idApplication;
-    const directory = __basedir + "/public/docs/"
-
-    applications.downloadFile(idApplication, (error, success) => {
-        if (error) {
-            res.status(400).send(error)
-        } else {
-            let fileName = success.data
-
-            res.download(directory + fileName, fileName, (err) => {
-                if (err) {
-                    res.status(500).send({
-                        message: "Could not download the file. " + err,
+                        }
                     })
                 }
             })
@@ -416,7 +217,215 @@ function download(req, res) {
     })
 
 }
-//idJobs, candidateName, candidateEmail, curriculum, nif, date, linkedin,
+
+function editInterest(req, result) {
+    let idApplication = req.params.idApplication
+    let interest = req.body.interest
+    jwt.verify(req.token, secret, (err, authData) => {
+        if (err) {
+            result.status(403).send(err);
+        } else {
+            applications.editInterest(idApplication, interest, (error, success) => {
+                if (error) {
+                    result.status(400).send(error)
+                } else {
+                    result.json(success)
+                }
+            })
+        }
+    })
+}
+
+function getInterest(req, result) {
+    jwt.verify(req.token, secret, (err, authData) => {
+        if (err) {
+            result.status(403).send(err);
+        } else {
+            applications.getInterest((error, success) => {
+                if (error) {
+                    result.status(400).send(error)
+                } else {
+                    result.json(success)
+                }
+            })
+        }
+    })
+}
+
+function getNotInterest(req, result) {
+    jwt.verify(req.token, secret, (err, authData) => {
+        if (err) {
+            result.status(403).send(err);
+        } else {
+            applications.getNotInterest((error, success) => {
+                if (error) {
+                    result.status(400).send(error)
+                } else {
+                    result.json(success)
+                }
+            })
+        }
+    })
+}
+
+function sendEmailForAllCandidates(req, res) {
+    let jobsId = req.params.jobsId
+    jwt.verify(req.token, secret, (err, authData) => {
+        if (err) {
+            res.status(403).send(err);
+        } else {
+            applications.sendEmailForAllCandidates(jobsId, (error, success) => {
+                if (error) {
+                    res.status(400).send(error)
+                } else {
+                    res.json(success)
+                    let email = emails.emailDenied(success.data[0].candidate_name)
+                    if (success.data.lengt != 0) {
+                        for (let i = 0; i < success.data.length; i++) {
+                            transporter.sendMail({
+                                from: process.env.EMAIL, // sender address
+                                to: success.data[i].candidate_email, // list of receivers
+                                subject: "Candidatura NEARCODE Consulting", // Subject line
+                                html: `${email}`, // html body
+                            });
+
+                            applications.updateSendEmail(success.data[i].id_application, (err, success) => {
+                                if (err) {
+                                    err
+                                }
+                            })
+                        }
+                    } else {
+                        res.status(204).send("Não existem candidatos")
+                    }
+                }
+            })
+
+        }
+    })
+
+
+}
+
+function sendEmailForCandidates(req, result) {
+    let idApplication = req.params.idApplication
+    jwt.verify(req.token, secret, (err, authData) => {
+        if (err) {
+            result.status(403).send(err);
+        } else {
+            applications.sendEmailForCandidates(idApplication, (error, success) => {
+                if (error) {
+                    result.status(400).send(error)
+                } else {
+                    result.json(success)
+                    let email = emails.emailDenied(success.data[0].candidate_name)
+                    if (success.data.length != 0) {
+                        transporter.sendMail({
+                            from: process.env.EMAIL, // sender address
+                            to: success.data[0].candidate_email, // list of receivers
+                            subject: "Candidatura NEARCODE Consulting", // Subject line
+                            html: `${email}`, // html body
+                        });
+
+                        applications.updateSendEmail(idApplication, (err, success) => {
+                            if (err) {
+                                err
+                            }
+                        })
+                    } else {
+                        result.status(204).send("Não existe candidato")
+                    }
+                }
+            })
+        }
+    })
+}
+
+function download(req, res) {
+    const idApplication = req.params.idApplication;
+    const directory = __basedir + "/public/docs/"
+    jwt.verify(req.token, secret, (err, authData) => {
+        if (err) {
+            res.status(400).send(err);
+        } else {
+            applications.downloadFile(idApplication, (error, success) => {
+                if (error) {
+                    res.status(400).send(error)
+                } else {
+                    let fileName = success.data
+                    res.download(directory + fileName, fileName, (err) => {
+                        if (err) {
+                            res.status(500).send({
+                                message: "Could not download the file. " + err,
+                            })
+                        }
+                    })
+                }
+            })
+        }
+    })
+}
+
+
+
+function deleteFile(req, res) {
+    let idApplication = req.params.idApplication
+    const directory = __basedir + "/public/docs/"
+    jwt.verify(req.token, secret, (err, authData) => {
+        if (err) {
+            res.status(403).send(err)
+        } else {
+            applications.deleteFile(idApplication, (error, success) => {
+                if (error) {
+                    res.status(403).send(error)
+                } else {
+                    fs.unlink(directory + success.data[0].curriculum, function (err) {
+                        if (err) res.status(400).send(err);
+                        // if no error, file has been deleted successfully
+                        res.status(200).send("Ficheiro eliminado")
+                    });
+                }
+            })
+        }
+    })
+
+}
+
+function editComment(req, res) {
+    let id = req.params.id
+    let comments = req.body.comments
+    jwt.verify(req.token, secret, (err, authData) => {
+        if (err) {
+            res.status(403).send(err);
+        } else {
+            applications.editComment(id, comments, (error, success) => {
+
+                if (error) {
+                    res.status(400).send(error)
+                } else {
+                    res.json(success)
+                }
+            })
+        }
+    })
+}
+
+function getSkills(req, res) {
+    jwt.verify(req.token, secret, (err, authData) => {
+        if (err) {
+            res.status(403).send(err);
+        } else {
+            applications.getSkills((error, success) => {
+                if (error) {
+                    res.status(400).send(error)
+                } else {
+                    res.json(success)
+                }
+            })
+        }
+    })
+}
+
 module.exports = {
     getApplications: getApplications,
     addApplications: addApplications,
@@ -427,6 +436,11 @@ module.exports = {
     editInterest: editInterest,
     getInterest: getInterest,
     getNotInterest: getNotInterest,
+    sendEmailForAllCandidates: sendEmailForAllCandidates,
     sendEmailForCandidates: sendEmailForCandidates,
-    download: download
+    download: download,
+    deleteFile: deleteFile,
+    editComment: editComment,
+    getSkills: getSkills,
+    contactsEmail: contactsEmail
 }
